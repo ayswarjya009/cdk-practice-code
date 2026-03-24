@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+import * as cdk from "aws-cdk-lib";
+import { S3LambdaStack } from "../lib/s3-lambda-stack";
+import { LambdaClient, GetFunctionConfigurationCommand } from "@aws-sdk/client-lambda";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+
+function mapRuntime(runtimeStr: string): lambda.Runtime {
+  switch (runtimeStr) {
+    case "nodejs18.x": return lambda.Runtime.NODEJS_18_X;
+    case "nodejs16.x": return lambda.Runtime.NODEJS_16_X;
+    case "nodejs14.x": return lambda.Runtime.NODEJS_14_X;
+    case "python3.10": return lambda.Runtime.PYTHON_3_10;
+    case "python3.9": return lambda.Runtime.PYTHON_3_9;
+    case "python3.8": return lambda.Runtime.PYTHON_3_8;
+    // add more mappings if needed
+    default:
+      throw new Error(`Unsupported Lambda runtime: ${runtimeStr}`);
+  }
+}
+
+async function main() {
+  const app = new cdk.App();
+
+  const existingLambdaArn = "arn:aws:lambda:us-east-1:415254325461:function:MyHelloLambda";
+  const existingBucketName = "my-unique-cdk-bucket-12345-ayswarjya";
+
+  // Parse region and name from ARN
+  const arnParts = existingLambdaArn.split(":");
+  const lambdaRegion = arnParts[3];
+  const lambdaName = arnParts[6];
+
+  const lambdaClient = new LambdaClient({ region: lambdaRegion });
+  const lambdaConfig = await lambdaClient.send(
+    new GetFunctionConfigurationCommand({ FunctionName: lambdaName })
+  );
+
+  const lambdaProps = {
+    runtime: mapRuntime(lambdaConfig.Runtime!),   // <-- map string to CDK Runtime
+    handler: lambdaConfig.Handler!,
+    memorySize: lambdaConfig.MemorySize!,
+    timeout: lambdaConfig.Timeout!,
+    environment: lambdaConfig.Environment?.Variables || {},
+  };
+
+  new S3LambdaStack(app, "MumbaiCloneStack", {
+    env: { region: "ap-south-1" },
+    existingBucketName,
+    existingLambdaArn,
+    lambdaProps,
+    bucketVersioned: true,
+  });
+
+  app.synth();
+}
+
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
